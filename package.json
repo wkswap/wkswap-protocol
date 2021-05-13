@@ -1,0 +1,7 @@
+{
+  "name": "wkswap-protocol",
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.1.0",
+    "chai": "^4.3.4"
+  }
+}
