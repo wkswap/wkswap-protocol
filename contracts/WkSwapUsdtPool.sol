@@ -6,7 +6,9 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./WkSwapPool.sol";
 
 contract WkSwapUSDTPool is WkSwapPool, Ownable {
-
-    constructor() Ownable(){}
-
+    constructor(
+        address token,
+        uint256 LTV,
+        address _provider
+    ) WkSwapPool(token, LTV, _provider) Ownable() {}
 }
