@@ -8,9 +8,15 @@ pragma solidity ^0.8.4;
  */
 
 interface IWkSwapProvider {
-    function getWkSwapPool(address) external view returns (address);
+    struct PoolInfo {
+        address pool;
+        address token;
+        string name;
+    }
 
-    function setWkSwapPool(address, address) external;
+    function createPool(address token, uint256 LTV) external;
+
+    function getWkSwapPool(address) external view returns (address);
 
     function getRewardPool() external view returns (address);
 

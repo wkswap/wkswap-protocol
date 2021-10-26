@@ -8,7 +8,7 @@ import "./interfaces/IWkSwapProvider.sol";
 import "./interfaces/IWkSwapPool.sol";
 import "./interfaces/IRewardPool.sol";
 
-abstract contract WkSwapPool is IWkSwapPool {
+contract WkSwapPool is IWkSwapPool {
     // using SafeMath for uint256;
     using LowGasSafeMath for uint256;
 
@@ -387,7 +387,7 @@ abstract contract WkSwapPool is IWkSwapPool {
     ///Calculate apy according to deposit loan ratio
     ///@dev The meaning of return value: 1e18 = 100%, 0.9232e18 = 92.32%
     function _getAPR() private view returns (uint256 depositInterestRate, uint256 borrowInterestRate) {
-        if (_deposits == 0) {
+        if (_deposits == 0 || _borrows == 0) {
             return (0, 0);
         }
 
