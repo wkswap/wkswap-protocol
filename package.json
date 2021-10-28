@@ -2,6 +2,8 @@
   "name": "wkswap-protocol",
   "dependencies": {
     "@openzeppelin/contracts": "^4.1.0",
-    "chai": "^4.3.4"
+    "chai": "^4.3.4",
+    "bn.js": "5.2.0",
+    "truffle-contract-size":"2.0.1"
   }
 }

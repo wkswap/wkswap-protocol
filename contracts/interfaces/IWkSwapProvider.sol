@@ -18,9 +18,17 @@ interface IWkSwapProvider {
 
     function getWkSwapPool(address) external view returns (address);
 
+    function hasPool(address) external view returns (bool);
+
+    function getPools() external view returns (PoolInfo[] memory);
+
     function getRewardPool() external view returns (address);
 
     function setRewardPool(address) external;
+
+    function getRouter() external view returns (address);
+
+    function setRouter(address) external;
 
     //Not used yet
     function getExtendAddressesProvider() external view returns (address);

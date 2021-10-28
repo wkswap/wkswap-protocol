@@ -8,25 +8,37 @@ import "./WkSwapPool.sol";
 
 contract WkSwapProvider is IWkSwapProvider, Ownable {
     mapping(address => address) private _pools;
+    mapping(address => bool) private _hasPools;
 
     address private _extendAddressesProvider;
 
     address private _rewardPool;
+
+    address private _router;
 
     PoolInfo[] private _poolInfos;
 
     constructor() Ownable() {}
 
     function createPool(address token, uint256 LTV) public override onlyOwner {
-        require(_pools[token] != address(0), "WSP: The fund pool already exists");
+        require(token != address(0) && _pools[token] == address(0), "WSP: The fund pool already exists");
         WkSwapPool pool = new WkSwapPool(token, LTV, address(this));
         _pools[token] = address(pool);
         _poolInfos.push(PoolInfo({ pool: address(pool), token: token, name: IERC20Metadata(token).symbol() }));
+        _hasPools[address(pool)] = true;
         emit CreatePool(address(pool), token);
     }
 
     function getWkSwapPool(address token) public view override returns (address) {
         return _pools[token];
+    }
+
+    function hasPool(address pool) public view override returns (bool) {
+        return _hasPools[pool];
+    }
+
+    function getPools() public view override returns (PoolInfo[] memory) {
+        return _poolInfos;
     }
 
     function getRewardPool() public view override returns (address) {
@@ -37,6 +49,16 @@ contract WkSwapProvider is IWkSwapProvider, Ownable {
         address old = _rewardPool;
         _rewardPool = rewardPool;
         emit SetRewardPool(old, rewardPool);
+    }
+
+    function getRouter() public view override returns (address) {
+        return _router;
+    }
+
+    function setRouter(address router) public override onlyOwner {
+        address old = _router;
+        _router = router;
+        emit SetRouter(old, router);
     }
 
     //Not used yet
@@ -53,5 +75,7 @@ contract WkSwapProvider is IWkSwapProvider, Ownable {
 
     event SetRewardPool(address _old, address _new);
 
-    event CreatePool(address _pool, address _token);
+    event SetRouter(address _old, address _new);
+
+    event CreatePool(address indexed _pool, address _token);
 }
