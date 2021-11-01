@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 import "./utils/LowGasSafeMath.sol";
 import "./utils/TransferHelper.sol";
 import "./interfaces/IWkSwapProvider.sol";
@@ -30,6 +31,8 @@ contract WkSwapPool is IWkSwapPool {
 
     //The deposit and borrowing of this contract are all this token
     address public immutable _token;
+
+    uint256 public immutable _tokenDecimals;
 
     //total token
     uint256 private _deposits;
@@ -74,6 +77,7 @@ contract WkSwapPool is IWkSwapPool {
         _depositIndexes = BASE;
         _LTV = LTV;
         _token = token;
+        _tokenDecimals = IERC20Metadata(token).decimals();
         _provider = IWkSwapProvider(provider);
     }
 
@@ -83,7 +87,7 @@ contract WkSwapPool is IWkSwapPool {
         require(IERC20(_token).allowance(msg.sender, address(this)) >= amount, "WSP: Insufficient allowance amount");
         updateIndex();
 
-        amount = inPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = inPutAmount(amount, _tokenDecimals);
 
         (uint256 userDeposit, uint256 totalDepoist) = userTotalDepoist(msg.sender);
         _deposit[msg.sender] = totalDepoist.add(amount);
@@ -92,7 +96,7 @@ contract WkSwapPool is IWkSwapPool {
 
         _deposits = _deposits.add(amount).add(totalDepoist.sub(userDeposit));
 
-        amount = outPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = outPutAmount(amount, _tokenDecimals);
         TransferHelper.safeTransferFrom(_token, msg.sender, address(this), amount);
 
         updateInterestRate();
@@ -104,6 +108,8 @@ contract WkSwapPool is IWkSwapPool {
         //Verify that the fund pool balance is sufficient, Because of loaned tokens
         require(IERC20(_token).balanceOf(address(this)) >= amount, "WSP: Insufficient fund pool balance");
 
+        updateIndex();
+
         uint256 withdrawableAmount = getWithdrawableAmount(msg.sender);
 
         if (all) {
@@ -112,11 +118,9 @@ contract WkSwapPool is IWkSwapPool {
             require(amount > 0, "WSP: amount must be > 0");
         }
 
-        amount = inPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = inPutAmount(amount, _tokenDecimals);
 
         require(withdrawableAmount >= amount, "WSP: Can't extract that much");
-
-        updateIndex();
 
         (uint256 userDeposit, uint256 totalDepoist) = userTotalDepoist(msg.sender);
         uint256 remainingInterest = totalDepoist.sub(userDeposit);
@@ -127,7 +131,7 @@ contract WkSwapPool is IWkSwapPool {
         //Then reset the index
         _depositIndex[msg.sender] = _depositIndexes;
 
-        amount = outPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = outPutAmount(amount, _tokenDecimals);
         TransferHelper.safeTransfer(_token, msg.sender, amount);
 
         updateInterestRate();
@@ -140,13 +144,12 @@ contract WkSwapPool is IWkSwapPool {
      * @param amount Borrow amount
      */
     function borrow(address pledgeToken, uint256 amount) public virtual override {
-        amount = inPutAmount(amount, IERC20Metadata(_token).decimals());
+        updateIndex();
+        amount = inPutAmount(amount, _tokenDecimals);
 
         uint256 loanableAmount = getLoanableAmount(msg.sender, pledgeToken);
         require(loanableAmount >= amount, "WSP: Can't lend that much");
         require(loanableAmount < _deposits.sub(_borrows), "WSP: Insufficient fund pool amount");
-
-        updateIndex();
 
         (uint256 userBorrow, uint256 totalBorrow) = userTotalBorrow(pledgeToken, msg.sender);
         _borrow[msg.sender] = totalBorrow.add(amount);
@@ -158,7 +161,7 @@ contract WkSwapPool is IWkSwapPool {
 
         IWkSwapRouter(_provider.getRouter()).addBorrowTokenPool(msg.sender, pledgeToken, address(this));
 
-        amount = outPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = outPutAmount(amount, _tokenDecimals);
         TransferHelper.safeTransfer(_token, msg.sender, amount);
 
         updateInterestRate();
@@ -180,11 +183,19 @@ contract WkSwapPool is IWkSwapPool {
         (uint256 userBorrow, uint256 totalBorrow) = userTotalBorrow(msg.sender, pledgeToken);
         require(totalBorrow > 0, "WSP: No need to repay");
 
+        uint256 calculated;
+
         if (all) {
-            amount = totalBorrow;
+            calculated = totalBorrow;
+            amount = outPutAmount(calculated, _tokenDecimals);
         } else {
-            require(amount > 0, "WSP: amount must be > 0");
-            amount = inPutAmount(amount, IERC20Metadata(_token).decimals());
+            calculated = inPutAmount(amount, _tokenDecimals);
+            amount = calculated > totalBorrow ? outPutAmount(totalBorrow, _tokenDecimals) : amount;
+            calculated = calculated > totalBorrow ? totalBorrow : calculated;
+        }
+
+        if (calculated == 0) {
+            return;
         }
 
         ///@dev The authorized amount should be as large as possible,
@@ -200,17 +211,17 @@ contract WkSwapPool is IWkSwapPool {
             subUserBorrowByPledge(msg.sender, pledgeToken);
         } else {
             uint256 interest = totalBorrow.sub(userBorrow);
-
             //borrows interest add to user borrows
-            _borrowTokenAmount[msg.sender][pledgeToken] = userBorrow.add(interest).sub(amount);
-            _borrow[msg.sender] = _borrow[msg.sender].add(interest).sub(amount);
-            _borrows = _borrows.add(interest).sub(amount);
+            _borrowTokenAmount[msg.sender][pledgeToken] = userBorrow.add(interest).sub(calculated);
+
+            _borrow[msg.sender] = _borrow[msg.sender].add(interest).sub(calculated);
+            _borrows = _borrows.add(interest).sub(calculated);
         }
 
         _borrowTokenIndex[msg.sender][pledgeToken] = _borrowIndexes;
 
-        amount = outPutAmount(amount, IERC20Metadata(_token).decimals());
-        TransferHelper.safeTransferFrom(_token, msg.sender, address(this), amount);
+        calculated = outPutAmount(calculated, _tokenDecimals);
+        TransferHelper.safeTransferFrom(_token, msg.sender, address(this), calculated);
 
         updateInterestRate();
 
@@ -292,10 +303,10 @@ contract WkSwapPool is IWkSwapPool {
         }
         _borrow[user] = totalBorrow.sub(getAmount);
 
-        liquidationFee = outPutAmount(liquidationFee, IERC20Metadata(_token).decimals());
+        liquidationFee = outPutAmount(liquidationFee, _tokenDecimals);
         IWkSwapPool(pool).subUserDeposit(user, totalDepoist, getAmount.add(liquidationFee));
 
-        getAmount = outPutAmount(getAmount, IERC20Metadata(_token).decimals());
+        getAmount = outPutAmount(getAmount, _tokenDecimals);
         IWkSwapPool(pool).transfer(msg.sender, getAmount);
     }
 
@@ -306,6 +317,11 @@ contract WkSwapPool is IWkSwapPool {
         totalDepoist = _depositIndexes.sub(_depositIndex[user]).add(BASE).mul(userDeposit).div(BASE);
     }
 
+    function userTotalDepoist2(address user) public view override returns (uint256, uint256) {
+        (uint256 userDeposit, uint256 totalDepoist) = userTotalDepoist(user);
+        return (outPutAmount(userDeposit, _tokenDecimals), outPutAmount(totalDepoist, _tokenDecimals));
+    }
+
     function userTotalBorrow(address user, address pledgeToken)
         public
         view
@@ -314,6 +330,11 @@ contract WkSwapPool is IWkSwapPool {
     {
         userBorrow = _borrowTokenAmount[user][pledgeToken];
         totalBorrow = _borrowIndexes.sub(_borrowTokenIndex[user][pledgeToken]).add(BASE).mul(userBorrow).div(BASE);
+    }
+
+    function userTotalBorrow2(address user, address pledgeToken) public view override returns (uint256, uint256) {
+        (uint256 userBorrow, uint256 totalBorrow) = userTotalBorrow(user, pledgeToken);
+        return (outPutAmount(userBorrow, _tokenDecimals), outPutAmount(totalBorrow, _tokenDecimals));
     }
 
     function getLoanableAmount(address user, address pledgeToken) public view override returns (uint256) {
@@ -359,7 +380,7 @@ contract WkSwapPool is IWkSwapPool {
             _getPool(msg.sender) != address(0) && msg.sender != address(this),
             "WSP: The source of the request is not a fund pool or other fund pool"
         );
-        amount = outPutAmount(amount, IERC20Metadata(_token).decimals());
+        amount = outPutAmount(amount, _tokenDecimals);
         TransferHelper.safeTransfer(_token, to, amount);
     }
 
@@ -418,6 +439,7 @@ contract WkSwapPool is IWkSwapPool {
 
         _depositIndexes = _depositIndexes.add(depositAddedIndex);
         _borrowIndexes = _borrowIndexes.add(borrowAddedIndex);
+        _lastTimestamp = block.timestamp;
         emit UpdateIndex(_depositIndexes, _borrowIndexes);
     }
 

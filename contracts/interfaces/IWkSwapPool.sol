@@ -6,7 +6,11 @@ interface IWkSwapPool {
 
     function userTotalDepoist(address) external view returns (uint256, uint256);
 
+    function userTotalDepoist2(address) external view returns (uint256, uint256);
+
     function userTotalBorrow(address, address) external view returns (uint256, uint256);
+
+    function userTotalBorrow2(address, address) external view returns (uint256, uint256);
 
     function getDeposits() external view returns (uint256);
 

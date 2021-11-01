@@ -20,6 +20,8 @@ let daiPoolAddress;
 let usdtPoolAddress;
 let usdcPoolAddress;
 
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 contract("WkSwap", async (accounts) => {
 
     before(async () => {
@@ -95,6 +97,7 @@ contract("WkSwap", async (accounts) => {
         await wUsdc.approve(usdcPool.address, DECIMAL6.mul(new BN(100)), { from: accounts[1] });
 
         await daiPool.deposit(DECIMAL18.mul(new BN(2)), { from: accounts[0] });
+
         await usdcPool.deposit(DECIMAL6.mul(new BN(2)), { from: accounts[1] });
 
         const deposit0 = await daiPool.getDeposit.call(accounts[0]);
@@ -130,7 +133,55 @@ contract("WkSwap", async (accounts) => {
 
         const usdcBalance = await wUsdc.balanceOf.call(accounts[0]);
         assert.equal(usdcBalance.toString(), DECIMAL6.toString());
+    });
 
+    it("repay", async () => {
+        const usdcPool = await WkSwapPool.at(usdcPoolAddress);
+        const daiPool = await WkSwapPool.at(daiPoolAddress);
+        delay(5000)
+
+        await daiPool.deposit(DECIMAL18, { from: accounts[0] });
+        delay(5000);
+        await usdcPool.deposit(DECIMAL6, { from: accounts[1] });
+        delay(5000);
+
+        const wDai = await WDai.deployed();
+        const wUsdc = await WUsdc.deployed();
+
+        let totalBorrow0 = await usdcPool.userTotalBorrow.call(accounts[0], wDai.address);
+
+        //Process the deviation between the query and the actual input
+        totalBorrow0 = totalBorrow0[0].mul(DECIMAL6).div(DECIMAL18);
+
+        await wUsdc.approve(usdcPool.address, totalBorrow0);
+
+        await usdcPool.repay(wDai.address, totalBorrow0, false);
+
+        totalBorrow0 = await usdcPool.userTotalBorrow.call(accounts[0], wDai.address);
+
+        if (totalBorrow0[0].toString() !== '0') {
+            await usdcPool.repay(wDai.address, 0, true);
+        }
+
+        totalBorrow0 = await usdcPool.userTotalBorrow.call(accounts[0], wDai.address);
+        assert.equal(totalBorrow0[1].toNumber(), 0);
+    });
+
+    it("repay2", async () => {
+        const usdcPool = await WkSwapPool.at(usdcPoolAddress);
+        const daiPool = await WkSwapPool.at(daiPoolAddress);
+
+        const wDai = await WDai.deployed();
+        const wUsdc = await WUsdc.deployed();
+
+        let totalBorrow1 = await daiPool.userTotalBorrow.call(accounts[1], wUsdc.address);
+
+        await wDai.approve(daiPool.address, DECIMAL18.mul(new BN(100)), { from: accounts[1] });
+        await wDai.mint({ from: accounts[1] });
+        await daiPool.repay(wUsdc.address, 0, true, { from: accounts[1] });
+
+        totalBorrow1 = await daiPool.userTotalBorrow.call(accounts[1], wUsdc.address);
+        assert.equal(totalBorrow1[1].toNumber(), 0);
     });
 
 });
